@@ -1,0 +1,78 @@
+#!/usr/bin/python3
+
+import requests
+import os
+import urllib3
+
+# This disables the insecure connection warning, since I am not verifying SSL Certs
+# I will (maybe) fix this later. My proxmox server is internal access only, so I don't
+# Really need to have SSL Certification internally. Thus the disabling.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# Function responsible for getting the ticket cookie for authorization
+# Takes in the proxmox base url (192.168.1.1 or proxmox.domain.com)
+# Returns a ticket from the API call response
+
+# Note: We are not doing any POST/PUT/DELETE requests, so according to documentation the CSRF token is not needed.
+def get_proxmox_session_token(proxmox_base_url, user, passwd):
+    response = requests.post("https://"+proxmox_base_url+":8006/api2/json/access/ticket", data={"username": user+"@pam", "password": passwd}, verify=False)
+    if(response.status_code == 200):
+        data = response.json()
+        return data["data"]["ticket"]
+    else:
+        print("There was an error obtaining the auth ticket for the REST API. Please check your network connectivty and make sure the Proxmox server is available.")
+
+def get_container_ip(proxmox_base_url, auth_token, vmid, node_name):
+    response = requests.get("https://"+proxmox_base_url+":8006/api2/json/nodes/"+node_name+"/lxc/"+vmid+"/config", cookies={"PVEAuthCookie":auth_token}, verify=False)
+    ip = response.json()["data"]["net0"].split(",")
+    if("/" in ip[5]):
+        return ip[5].split("=")[1].split("/")[0]
+    else:
+        # dhcp config
+        second_response = requests.get("https://"+proxmox_base_url+":8006/api2/json/nodes/"+node_name+"/lxc/"+vmid+"/status/current", cookies={"PVEAuthCookie":auth_token}, verify=False)
+        # quick check to see if container is template or not running
+        if((second_response.json()["data"]["template"] != 1) and (second_response.json()["data"]["status"] == "running")):
+            print(vmid)
+            print(ip[4])
+
+
+def get_containers(proxmox_base_url, user, passwd):
+    container_ip = dict()
+    auth_token = get_proxmox_session_token(proxmox_base_url, user, passwd)
+    nodes = requests.get("https://"+proxmox_base_url+":8006/api2/json/nodes", cookies={"PVEAuthCookie":auth_token}, verify=False)
+    nodes = nodes.json()["data"]
+    for i in nodes:
+        containers = requests.get("https://"+proxmox_base_url+":8006/api2/json/nodes/"+i["node"]+"/lxc", cookies={"PVEAuthCookie":auth_token}, verify=False)
+        # print(containers.json())
+        for j in containers.json()["data"]:
+            container_ip[j["name"]] = get_container_ip(proxmox_base_url, auth_token, j["vmid"], i["node"])
+    return container_ip
+
+def menu(proxmox_base_url, user, passwd):
+    print(" ___ __   __ ___        ___  ___  _  _ ")
+    print("| _ \\\\ \ / /| __|      / __|/ __|| || |")
+    print("|  _/ \   / | _|       \__ \\\\__ \| __ |")
+    print("|_|    \_/  |___|      |___/|___/|_||_|")
+
+    containers=get_containers(proxmox_base_url, user, passwd)
+    print()
+    print()
+    print("Available containers for SSH:")
+    choice_matrix = dict()
+    k = 1
+    for i in containers:
+        print("  "+str(k)+") "+i)
+        choice_matrix[k] = i
+        k += 1
+    print()
+    choice = input(" Enter Choice: ")
+    username = input(" Enter Username: ")
+    # os.system('cls' if os.name == 'nt' else 'clear') 
+    command = ["ssh", username+"@"+containers[choice_matrix[int(choice)]]]
+    if(int(choice) >= 1 and int(choice) <= k-1):
+        os.execvp(command[0], command)
+
+
+if __name__ == "__main__":
+    menu("10.0.0.66", "root", "vFEA9py\\MS")
