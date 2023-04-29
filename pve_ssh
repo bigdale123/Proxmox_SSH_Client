@@ -61,9 +61,9 @@ def menu(proxmox_base_url, user, passwd):
     print("Available containers for SSH:")
     choice_matrix = dict()
     k = 1
-    for i in containers:
-        print("  "+str(k)+") "+i)
-        choice_matrix[k] = i
+    for key, value in sorted(containers.items()):
+        print("  "+str(k)+") "+key)
+        choice_matrix[k] = key
         k += 1
     print()
     choice = input(" Enter Choice: ")
