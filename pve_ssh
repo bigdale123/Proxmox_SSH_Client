@@ -75,4 +75,4 @@ def menu(proxmox_base_url, user, passwd):
 
 
 if __name__ == "__main__":
-    menu("10.0.0.66", "root", "vFEA9py\\MS")
+    menu("address", "user", "pass")
